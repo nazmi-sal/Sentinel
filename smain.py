@@ -2,9 +2,9 @@ import customtkinter as ctk
 from tkinter import messagebox
 from PIL import Image
 
-from userfunctions import login_user, create_user, get_investigators
+from userfunctions import login_user, create_user, get_investigators, get_user_name
 from incidents import create_incident, get_all_incidents
-from statuschanges import get_status_history, change_status
+from statuschanges import get_status_history, change_status, undo_last_status_change
 from reports import create_report
 
 # ============================================================
@@ -67,7 +67,6 @@ current_user = {"id": None, "username": None, "role": None}
 # FUNCTIONS:
 
 # Password for login
-
 def toggle_password():
     global password_visible
 
@@ -132,7 +131,6 @@ def toggle_investigator_code():
 
 # ------------------------
 # Login
-
 def login():
     email = email_entry.get()
     password = password_entry.get()
@@ -169,7 +167,6 @@ def login():
 
 # ------------------------
 # Register
-
 def register():
     username = username_entry.get()
     email = register_email_entry.get()
@@ -225,7 +222,6 @@ def register():
 
 # ------------------------
 # Navigation
-
 def open_register():
     login_frame.pack_forget()
 
@@ -246,7 +242,6 @@ def back_to_login():
 
 # ------------------------
 # Dashboard
-
 def open_dashboard(user_id, username, role):
 
     current_user["id"] = user_id
@@ -263,13 +258,7 @@ def open_dashboard(user_id, username, role):
         text=f"Welcome {username}\nRole: {role}"
     )
 
-    if role == "investigator":
-
-        report_button.pack(
-            pady=5
-        )
-
-    elif role == "user":
+    if role == "user":
 
         create_incident_button.pack(
             pady=5
@@ -285,7 +274,6 @@ def open_dashboard(user_id, username, role):
 
 # ------------------------
 # Investigator code function
-
 def role_changed():
 
     if role_var.get() == "investigator":
@@ -316,10 +304,11 @@ def open_create_incident():
 
 # ------------------------
 # Kanban board
-
 KANBAN_STATUSES = ["New", "Investigated", "Contained", "Resolved", "Closed"]
 
 kanban_columns = {}
+kanban_column_bounds = {}
+last_moved_incident = {"id": None}
 
 def open_kanban_board():
 
@@ -334,41 +323,76 @@ def open_kanban_board():
         pady=20
     )
 
+    window.lift()
+    window.focus_force()
+
 # ------------------------
 # allowing drag and drop of cards between columns
-drag_state = {"card": None, "start_x": 0, "start_y": 0}
+drag_state = {"card": None, "float_win": None, "start_x": 0, "start_y": 0}
 
-def on_card_press(event):
-
-    card = event.widget
+def on_card_press(event, card):
 
     drag_state["card"] = card
     drag_state["start_x"] = event.x_root
     drag_state["start_y"] = event.y_root
 
-def on_card_drag(event):
+    float_win = ctk.CTkToplevel(window)
+    float_win.overrideredirect(True)
+    float_win.attributes("-alpha", 0.85)
+    float_win.geometry(f"150x50+{event.x_root - 75}+{event.y_root - 25}")
 
-    card = drag_state["card"]
+    ctk.CTkLabel(
+        float_win,
+        text=card.cget("text"),
+        fg_color=ACCENT,
+        corner_radius=6
+    ).pack(
+        fill="both",
+        expand=True
+    )
 
-    if card is None:
+    drag_state["float_win"] = float_win
+
+def on_card_motion(event, card):
+
+    float_win = drag_state["float_win"]
+
+    if float_win is None:
         return
 
-    dx = event.x_root - drag_state["start_x"]
-    dy = event.y_root - drag_state["start_y"]
+    float_win.geometry(f"+{event.x_root - 75}+{event.y_root - 25}")
 
-def on_card_release(event):
+def on_card_release(event, card):
 
-    card = drag_state["card"]
+    if drag_state["card"] is None:
+        return
 
-    if card is None:
+    float_win = drag_state["float_win"]
+
+    if float_win is not None:
+
+        float_win.destroy()
+        drag_state["float_win"] = None
+
+    dx = abs(event.x_root - drag_state["start_x"])
+    dy = abs(event.y_root - drag_state["start_y"])
+
+    drag_state["card"] = None
+
+    if dx < 6 and dy < 6:
+
+        open_incident_detail(card.incident_id)
+
         return
 
     drop_x = event.x_root
     drop_y = event.y_root
 
+    window.update_idletasks()
+
     target_status = None
 
-    for status_name, column in kanban_columns.items():
+    for status_name, column in kanban_column_bounds.items():
 
         col_x = column.winfo_rootx()
         col_y = column.winfo_rooty()
@@ -379,8 +403,6 @@ def on_card_release(event):
 
             target_status = status_name
             break
-
-    drag_state["card"] = None
 
     if target_status is None or target_status == card.origin_status:
         return
@@ -403,6 +425,8 @@ def on_card_release(event):
 
     if result:
 
+        last_moved_incident["id"] = card.incident_id
+
         build_kanban_board()
 
     else:
@@ -423,14 +447,6 @@ def build_kanban_board():
 
             widget.destroy()
 
-    investigators = get_investigators()
-
-    investigator_names = {}
-
-    for investigator_id, investigator_name in investigators:
-
-        investigator_names[investigator_id] = investigator_name
-
     incidents = get_all_incidents()
 
     for incident in incidents:
@@ -440,20 +456,19 @@ def build_kanban_board():
         category = incident[2]
         severity = incident[3]
         status = incident[6]
-        investigator_id = incident[10]
+        reporter_id = incident[9]
 
         column = kanban_columns.get(status)
 
         if column is None:
             continue
 
-        investigator_name = investigator_names.get(investigator_id, "Unassigned")
+        reporter_name = get_user_name(reporter_id)
 
         card = ctk.CTkButton(
             column,
-            text=f"{title}\n{severity} | {category}\n{investigator_name}",
-            anchor="w",
-            command=lambda i=incident_id: open_incident_detail(i)
+            text=f"{title}\nReported by: {reporter_name}",
+            anchor="w"
         )
 
         card.pack(
@@ -465,9 +480,9 @@ def build_kanban_board():
         card.incident_id = incident_id
         card.origin_status = status
 
-        card.bind("<ButtonPress-1>", on_card_press)
-        card.bind("<B1-Motion>", on_card_drag)
-        card.bind("<ButtonRelease-1>", on_card_release)
+        card.bind("<ButtonPress-1>", lambda e, c=card: on_card_press(e, c))
+        card.bind("<B1-Motion>", lambda e, c=card: on_card_motion(e, c))
+        card.bind("<ButtonRelease-1>", lambda e, c=card: on_card_release(e, c))
 
 def open_incident_detail(incident_id):
 
@@ -493,7 +508,11 @@ def open_incident_detail(incident_id):
     main_x = window.winfo_x()
     main_y = window.winfo_y()
 
-    detail_window.geometry(f"320x400+{main_x + 550}+{main_y + 50}")
+    detail_window.geometry(f"320x450+{main_x + 550}+{main_y + 50}")
+    detail_window.lift()
+    detail_window.focus_force()
+    detail_window.transient(window)
+    detail_window.attributes("-topmost", True)
 
     ctk.CTkLabel(
         detail_window,
@@ -501,6 +520,25 @@ def open_incident_detail(incident_id):
         font=TITLE_FONT
     ).pack(
         pady=10
+    )
+
+    button_row = ctk.CTkFrame(
+        detail_window,
+        fg_color="transparent"
+    )
+
+    button_row.pack(
+        pady=5
+    )
+
+    ctk.CTkButton(
+        button_row,
+        text="Close",
+        width=100,
+        command=detail_window.destroy
+    ).pack(
+        side="left",
+        padx=5
     )
 
     info_text = (
@@ -516,7 +554,7 @@ def open_incident_detail(incident_id):
         detail_window,
         text=info_text,
         justify="left",
-        wraplength=350
+        wraplength=280
     ).pack(
         pady=10,
         padx=20
@@ -555,36 +593,43 @@ def open_incident_detail(incident_id):
             padx=20
         )
 
-    if current_user["role"] == "investigator" and status in ["Resolved", "Closed"]:
+def undo_last_move():
 
-        def generate_report():
+    if last_moved_incident["id"] is None:
 
-            summary = create_report(
-                current_user["id"],
-                current_user["role"],
-                incident_id
-            )
+        messagebox.showerror(
+            "Error",
+            "No recent move to undo."
+        )
 
-            if summary:
+        return
 
-                messagebox.showinfo(
-                    "Report Generated",
-                    summary
-                )
+    if current_user["role"] != "investigator":
 
-            else:
+        messagebox.showerror(
+            "Access Denied",
+            "Only investigators can undo status changes."
+        )
 
-                messagebox.showerror(
-                    "Error",
-                    "Could not generate report."
-                )
+        return
 
-        ctk.CTkButton(
-            detail_window,
-            text="Generate Report",
-            command=generate_report
-        ).pack(
-            pady=15
+    result = undo_last_status_change(
+        current_user["id"],
+        current_user["role"],
+        last_moved_incident["id"]
+    )
+
+    if result:
+
+        last_moved_incident["id"] = None
+
+        build_kanban_board()
+
+    else:
+
+        messagebox.showerror(
+            "Error",
+            "Nothing to undo."
         )
 
 # ------------------------
@@ -1182,8 +1227,28 @@ kanban_frame = ctk.CTkFrame(
 
 kanban_frame.pack_propagate(False)
 
-ctk.CTkButton(
+kanban_top_row = ctk.CTkFrame(
     kanban_frame,
+    fg_color="transparent"
+)
+
+kanban_top_row.pack(
+    pady=5
+)
+
+ctk.CTkButton(
+    kanban_top_row,
+    text="↩",
+    command=undo_last_move,
+    width=50,
+    fg_color="gray30"
+).pack(
+    side="left",
+    padx=5
+)
+
+ctk.CTkButton(
+    kanban_top_row,
     text="Back",
     command=lambda: (
         window.geometry("500x650"),
@@ -1192,7 +1257,8 @@ ctk.CTkButton(
     ),
     width=150
 ).pack(
-    pady=5
+    side="left",
+    padx=5
 )
 
 for status in KANBAN_STATUSES:
@@ -1229,6 +1295,7 @@ for status in KANBAN_STATUSES:
     )
 
     kanban_columns[status] = column_scroll
+    kanban_column_bounds[status] = column_container
     
 # ============================================================
 # DASHBOARD
@@ -1260,11 +1327,6 @@ create_incident_button = ctk.CTkButton(
     dashboard_frame,
     text="Create Incident",
      command=open_create_incident
-)
-
-report_button = ctk.CTkButton(
-    dashboard_frame,
-    text="Generate Report"
 )
 
 view_incidents_button = ctk.CTkButton(

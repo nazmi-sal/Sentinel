@@ -113,6 +113,28 @@ def get_investigators():
 
     return investigators
 
+# gets all users 
+def get_user_name(user_id):
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+    SELECT user_name
+    FROM User
+    WHERE user_id = ?
+    """,
+    (user_id,))
+
+    row = cursor.fetchone()
+
+    connection.close()
+
+    if row:
+        return row[0]
+
+    return "Unknown"
+
 # reassigns an incident to a different investigator
 def reassign_investigator(incident_id, new_investigator_id):
 
