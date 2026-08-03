@@ -272,6 +272,16 @@ def open_dashboard(user_id, username, role):
         pady=5
     )
 
+    elif role == "investigator":
+
+        report_button.pack(
+            pady=5
+        )
+
+    view_incidents_button.pack(
+        pady=5
+    )
+
 # ------------------------
 # Investigator code function
 def role_changed():
@@ -630,6 +640,87 @@ def undo_last_move():
         messagebox.showerror(
             "Error",
             "Nothing to undo."
+        )
+
+# ------------------------
+# Generate Report screen
+
+report_incident_lookup = {}
+
+def open_report_screen():
+
+    window.geometry("500x500")
+
+    dashboard_frame.pack_forget()
+
+    refresh_report_dropdown()
+
+    report_frame.pack(
+        pady=40
+    )
+
+def refresh_report_dropdown():
+
+    incidents = get_all_incidents()
+
+    report_incident_lookup.clear()
+
+    eligible = []
+
+    for incident in incidents:
+
+        incident_id = incident[0]
+        title = incident[1]
+        status = incident[6]
+
+        if status in ["Resolved", "Closed"]:
+
+            label = f"#{incident_id} - {title}"
+            report_incident_lookup[label] = incident_id
+            eligible.append(label)
+
+    if not eligible:
+
+        report_menu.configure(values=["No eligible incidents"])
+        report_var.set("No eligible incidents")
+
+        return
+
+    report_menu.configure(values=eligible)
+    report_var.set(eligible[0])
+
+def generate_report_from_screen():
+
+    selected = report_var.get()
+    incident_id = report_incident_lookup.get(selected)
+
+    if incident_id is None:
+
+        messagebox.showerror(
+            "Error",
+            "Please select a valid incident."
+        )
+
+        return
+
+    summary = create_report(
+        current_user["id"],
+        current_user["role"],
+        incident_id
+    )
+
+    if summary:
+
+        messagebox.showinfo(
+            "Report Generated",
+            summary
+        )
+
+    else:
+
+        messagebox.showerror(
+            "Error",
+            "Could not generate report."
         )
 
 # ------------------------
@@ -1335,6 +1426,12 @@ view_incidents_button = ctk.CTkButton(
     command=open_kanban_board
 )
 
+report_button = ctk.CTkButton(
+    dashboard_frame,
+    text="Generate Report",
+    command=open_report_screen
+)
+
 evidence_button = ctk.CTkButton(
     dashboard_frame,
     text="Upload Evidence"
@@ -1350,5 +1447,4 @@ ctk.CTkButton(
 
 # ============================================================
 # START PROGRAM
-
 window.mainloop()
