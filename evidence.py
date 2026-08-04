@@ -112,3 +112,23 @@ def get_evidence(incident_id):
     connection.close()
 
     return evidence_list
+
+# gets all evidence uploaded by a specific user
+def get_evidence_by_uploader(uploaded_by):
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+    SELECT evidence_id, file_name, file_type, file_path, notes, uploaded_at, incident_id
+    FROM Evidence
+    WHERE uploaded_by = ?
+    ORDER BY uploaded_at DESC
+    """,
+    (uploaded_by,))
+
+    evidence_list = cursor.fetchall()
+
+    connection.close()
+
+    return evidence_list

@@ -123,6 +123,27 @@ def get_all_incidents():
 
     return incidents
 
+# gets all incidents reported by a specific user
+def get_incidents_by_reporter(reporter_id):
+
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    cursor.execute("""
+    SELECT incident_id, title, category, severity, description, location,
+           status, created_at, closed_at, reporter_id, investigator_id
+    FROM Incident
+    WHERE reporter_id = ?
+    ORDER BY created_at DESC
+    """,
+    (reporter_id,))
+
+    incidents = cursor.fetchall()
+
+    connection.close()
+
+    return incidents
+
 # searches/filters incidents by status, category, severity, and date range
 def search_incidents(status=None, category=None, severity=None, date_from=None, date_to=None):
 

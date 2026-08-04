@@ -6,18 +6,16 @@ def get_connection():
     return sqlite3.connect("sentinel.db")
 
 # allows investigators to generate reports
-def create_report(user_id, role, incident_id):
+def create_report(user_id, role, incident_id, additional_notes=""):
 
     connection = get_connection()
     cursor = connection.cursor()
 
-    # checks permission
     if role != "investigator":
         print("Access denied. Only investigators can generate reports.")
         connection.close()
         return False
 
-    # gets incident details
     cursor.execute("""
     SELECT title, category, severity, description, status
     FROM Incident
@@ -34,7 +32,6 @@ def create_report(user_id, role, incident_id):
 
     title, category, severity, description, status = incident
 
-    # only resolved/closed incidents
     if status not in ["Resolved", "Closed"]:
         print("Reports can only be generated for resolved or closed incidents.")
         connection.close()
@@ -48,6 +45,10 @@ def create_report(user_id, role, incident_id):
         f"Status: {status}\n\n"
         f"Description:\n{description}"
     )
+
+    if additional_notes.strip():
+
+        summary += f"\n\nInvestigator Notes & Recommendations:\n{additional_notes.strip()}"
 
     cursor.execute("""
     INSERT INTO SummaryReport

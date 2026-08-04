@@ -1,11 +1,13 @@
 import customtkinter as ctk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from PIL import Image
 
+import reports
 from userfunctions import login_user, create_user, get_investigators, get_user_name
-from incidents import create_incident, get_all_incidents
+from incidents import create_incident, get_all_incidents, get_incidents_by_reporter
 from statuschanges import get_status_history, change_status, undo_last_status_change
-from reports import create_report
+from reports import create_report, get_reports
+from evidence import add_evidence, get_evidence_by_uploader
 
 # ============================================================
 # GUI SETTINGS
@@ -268,19 +270,19 @@ def open_dashboard(user_id, username, role):
             pady=5
         )
 
-    view_incidents_button.pack(
-        pady=5
-    )
-
-    elif role == "investigator":
-
-        report_button.pack(
+        my_evidence_button.pack(
             pady=5
         )
 
     view_incidents_button.pack(
         pady=5
     )
+
+    if role == "investigator":
+
+        report_button.pack(
+            pady=5
+        )
 
 # ------------------------
 # Investigator code function
@@ -494,9 +496,120 @@ def build_kanban_board():
         card.bind("<B1-Motion>", lambda e, c=card: on_card_motion(e, c))
         card.bind("<ButtonRelease-1>", lambda e, c=card: on_card_release(e, c))
 
+def open_incident_evidence(incident_id, incident_title):
+
+    from evidence import get_evidence
+
+    evidence_window = ctk.CTkToplevel(window)
+    evidence_window.title(f"Evidence - {incident_title}")
+    evidence_window.geometry("350x450")
+    evidence_window.transient(window)
+    evidence_window.attributes("-topmost", True)
+    evidence_window.lift()
+    evidence_window.focus_force()
+
+    ctk.CTkLabel(
+        evidence_window,
+        text="Evidence",
+        font=TITLE_FONT
+    ).pack(
+        pady=10
+    )
+
+    scroll_area = ctk.CTkScrollableFrame(
+        evidence_window,
+        width=310,
+        height=350
+    )
+
+    scroll_area.pack(
+        fill="both",
+        expand=True,
+        padx=10,
+        pady=10
+    )
+
+    evidence_list = get_evidence(incident_id)
+
+    if not evidence_list:
+
+        ctk.CTkLabel(
+            scroll_area,
+            text="No evidence uploaded yet."
+        ).pack(
+            pady=10
+        )
+
+        return
+
+    image_types = ["jpg", "jpeg", "png"]
+
+    for evidence_id, file_name, file_type, file_path, notes, uploaded_at, uploaded_by in evidence_list:
+
+        entry_frame = ctk.CTkFrame(
+            scroll_area,
+            fg_color="gray20",
+            corner_radius=6
+        )
+
+        entry_frame.pack(
+            fill="x",
+            padx=5,
+            pady=5
+        )
+
+        if file_type in image_types:
+
+            try:
+
+                img = Image.open(file_path)
+
+                thumbnail = ctk.CTkImage(
+                    light_image=img,
+                    dark_image=img,
+                    size=(150, 150)
+                )
+
+                ctk.CTkLabel(
+                    entry_frame,
+                    text="",
+                    image=thumbnail
+                ).pack(
+                    pady=5
+                )
+
+            except:
+
+                ctk.CTkLabel(
+                    entry_frame,
+                    text="(Image could not be loaded)"
+                ).pack(
+                    pady=5
+                )
+
+        else:
+
+            ctk.CTkLabel(
+                entry_frame,
+                text=f"📄 {file_type.upper()} file"
+            ).pack(
+                pady=5
+            )
+
+        ctk.CTkLabel(
+            entry_frame,
+            text=f"File: {file_name}\nUploaded: {uploaded_at}\nNotes: {notes if notes else 'None'}",
+            justify="left",
+            wraplength=270
+        ).pack(
+            pady=(0,5),
+            padx=5
+        )
+
 def open_incident_detail(incident_id):
 
     from incidents import get_incident
+    from reports import get_reports
 
     incident = get_incident(incident_id)
 
@@ -518,7 +631,7 @@ def open_incident_detail(incident_id):
     main_x = window.winfo_x()
     main_y = window.winfo_y()
 
-    detail_window.geometry(f"320x450+{main_x + 550}+{main_y + 50}")
+    detail_window.geometry(f"350x500+{main_x + 550}+{main_y + 50}")
     detail_window.lift()
     detail_window.focus_force()
     detail_window.transient(window)
@@ -551,6 +664,19 @@ def open_incident_detail(incident_id):
         padx=5
     )
 
+    scroll_area = ctk.CTkScrollableFrame(
+        detail_window,
+        width=310,
+        height=380
+    )
+
+    scroll_area.pack(
+        fill="both",
+        expand=True,
+        padx=10,
+        pady=10
+    )
+
     info_text = (
         f"Category: {category}\n"
         f"Severity: {severity}\n"
@@ -561,21 +687,23 @@ def open_incident_detail(incident_id):
     )
 
     ctk.CTkLabel(
-        detail_window,
+        scroll_area,
         text=info_text,
         justify="left",
         wraplength=280
     ).pack(
         pady=10,
-        padx=20
+        padx=10,
+        anchor="w"
     )
 
     ctk.CTkLabel(
-        detail_window,
+        scroll_area,
         text="Status history",
         font=HEADING_FONT
     ).pack(
-        pady=(20,5)
+        pady=(20,5),
+        anchor="w"
     )
 
     history = get_status_history(incident_id)
@@ -585,24 +713,53 @@ def open_incident_detail(incident_id):
         for change_id, old_status, new_status, changed_at, changed_by in history:
 
             ctk.CTkLabel(
-                detail_window,
+                scroll_area,
                 text=f"{old_status} → {new_status}  ({changed_at})",
                 font=NORMAL_FONT
             ).pack(
                 anchor="w",
-                padx=20
+                padx=10
             )
 
     else:
 
         ctk.CTkLabel(
-            detail_window,
+            scroll_area,
             text="No status changes yet.",
             font=NORMAL_FONT
         ).pack(
-            padx=20
+            anchor="w",
+            padx=10
         )
 
+    reports = get_reports(incident_id)
+
+    if reports:
+
+        ctk.CTkLabel(
+            scroll_area,
+            text="Generated Reports",
+            font=HEADING_FONT
+        ).pack(
+            pady=(20,5),
+            anchor="w"
+        )
+
+        for report_id, summary, generated_at, generated_by in reports:
+
+            ctk.CTkLabel(
+                scroll_area,
+                text=f"Report ({generated_at}):\n{summary}",
+                justify="left",
+                wraplength=280,
+                font=NORMAL_FONT
+            ).pack(
+                anchor="w",
+                padx=10,
+                pady=5
+            )
+
+# undo button as a function
 def undo_last_move():
 
     if last_moved_incident["id"] is None:
@@ -703,10 +860,13 @@ def generate_report_from_screen():
 
         return
 
+    notes = report_notes_entry.get("1.0", "end").strip()
+
     summary = create_report(
         current_user["id"],
         current_user["role"],
-        incident_id
+        incident_id,
+        notes
     )
 
     if summary:
@@ -716,11 +876,192 @@ def generate_report_from_screen():
             summary
         )
 
+        report_notes_entry.delete("1.0", "end")
+
     else:
 
         messagebox.showerror(
             "Error",
             "Could not generate report."
+        )
+
+# ------------------------
+# Evidence upload screen
+
+evidence_incident_lookup = {}
+selected_file_path = {"path": None}
+
+def open_evidence_screen():
+
+    window.geometry("500x600")
+
+    dashboard_frame.pack_forget()
+
+    refresh_evidence_dropdown()
+
+    selected_file_path["path"] = None
+    file_label.configure(text="No file selected")
+
+    evidence_frame.pack(
+        pady=40
+    )
+
+def refresh_evidence_dropdown():
+
+    incidents = get_incidents_by_reporter(current_user["id"])
+
+    evidence_incident_lookup.clear()
+
+    labels = []
+
+    for incident in incidents:
+
+        incident_id = incident[0]
+        title = incident[1]
+        status = incident[6]
+
+        if status in ["Resolved", "Closed"]:
+            continue
+
+        label = f"#{incident_id} - {title}"
+        evidence_incident_lookup[label] = incident_id
+        labels.append(label)
+
+    if not labels:
+
+        evidence_menu.configure(values=["No eligible incidents"])
+        evidence_var.set("No eligible incidents")
+
+        return
+
+    evidence_menu.configure(values=labels)
+    evidence_var.set(labels[0])
+
+def browse_file():
+
+    path = filedialog.askopenfilename(
+        title="Select evidence file",
+        filetypes=[
+            ("Allowed files", "*.jpg *.jpeg *.png *.pdf *.txt")
+        ]
+    )
+
+    if path:
+
+        selected_file_path["path"] = path
+
+        file_name = path.split("/")[-1]
+
+        file_label.configure(text=file_name)
+
+def submit_evidence():
+
+    selected = evidence_var.get()
+    incident_id = evidence_incident_lookup.get(selected)
+
+    if incident_id is None:
+
+        messagebox.showerror(
+            "Error",
+            "Please select a valid incident."
+        )
+
+        return
+
+    file_path = selected_file_path["path"]
+
+    if not file_path:
+
+        messagebox.showerror(
+            "Error",
+            "Please select a file to upload."
+        )
+
+        return
+
+    file_name = file_path.split("/")[-1]
+    notes = evidence_notes_entry.get("1.0", "end").strip()
+
+    result = add_evidence(
+        incident_id,
+        current_user["id"],
+        file_name,
+        file_path,
+        notes
+    )
+
+    if result:
+
+        messagebox.showinfo(
+            "Success",
+            "Evidence uploaded successfully!"
+        )
+
+        selected_file_path["path"] = None
+        file_label.configure(text="No file selected")
+        evidence_notes_entry.delete("1.0", "end")
+
+    else:
+
+        messagebox.showerror(
+            "Error",
+            "Could not upload evidence. Check the file type and size."
+        )
+
+# ------------------------
+# View My Evidence screen
+
+def open_my_evidence_screen():
+
+    window.geometry("500x600")
+
+    dashboard_frame.pack_forget()
+
+    build_my_evidence_list()
+
+    my_evidence_frame.pack(
+        pady=20
+    )
+
+def build_my_evidence_list():
+
+    for widget in my_evidence_list_area.winfo_children():
+
+        widget.destroy()
+
+    evidence_list = get_evidence_by_uploader(current_user["id"])
+
+    if not evidence_list:
+
+        ctk.CTkLabel(
+            my_evidence_list_area,
+            text="You haven't uploaded any evidence yet."
+        ).pack(
+            pady=10
+        )
+
+        return
+
+    for evidence_id, file_name, file_type, file_path, notes, uploaded_at, incident_id in evidence_list:
+
+        entry_text = (
+            f"File: {file_name}\n"
+            f"Incident: #{incident_id}\n"
+            f"Uploaded: {uploaded_at}\n"
+            f"Notes: {notes if notes else 'None'}"
+        )
+
+        ctk.CTkLabel(
+            my_evidence_list_area,
+            text=entry_text,
+            justify="left",
+            wraplength=280,
+            fg_color="gray20",
+            corner_radius=6
+        ).pack(
+            fill="x",
+            padx=10,
+            pady=5
         )
 
 # ------------------------
@@ -1308,6 +1649,239 @@ ctk.CTkButton(
 )
 
 # ============================================================
+# GENERATE REPORT PAGE
+
+report_frame = ctk.CTkFrame(
+    window,
+    width=350,
+    height=500
+)
+
+report_frame.pack_propagate(False)
+
+ctk.CTkLabel(
+    report_frame,
+    text="Generate Report",
+    font=TITLE_FONT
+).pack(
+    pady=20
+)
+
+ctk.CTkLabel(
+    report_frame,
+    text="Select Incident"
+).pack(
+    anchor="w",
+    padx=50
+)
+
+report_var = ctk.StringVar(
+    value=""
+)
+
+report_menu = ctk.CTkOptionMenu(
+    report_frame,
+    values=["No eligible incidents"],
+    variable=report_var
+)
+
+report_menu.pack(
+    pady=5,
+    padx=50,
+    anchor="w"
+)
+
+ctk.CTkLabel(
+    report_frame,
+    text="Notes & Recommendations: (optional)"
+).pack(
+    anchor="w",
+    padx=50,
+    pady=(15,0)
+)
+
+report_notes_entry = ctk.CTkTextbox(
+    report_frame,
+    width=250,
+    height=80,
+    wrap="word"
+)
+
+report_notes_entry.pack(
+    pady=5
+)
+
+ctk.CTkButton(
+    report_frame,
+    text="Generate Report",
+    command=generate_report_from_screen,
+    width=250
+).pack(
+    pady=20
+)
+
+ctk.CTkButton(
+    report_frame,
+    text="Back",
+    command=lambda: (
+        window.geometry("500x650"),
+        report_frame.pack_forget(),
+        dashboard_frame.pack(pady=60)
+    ),
+    width=250
+).pack(
+    pady=10
+)
+
+# ============================================================
+# EVIDENCE UPLOAD PAGE
+
+evidence_frame = ctk.CTkFrame(
+    window,
+    width=350,
+    height=550
+)
+
+evidence_frame.pack_propagate(False)
+
+ctk.CTkLabel(
+    evidence_frame,
+    text="Upload Evidence",
+    font=TITLE_FONT
+).pack(
+    pady=20
+)
+
+ctk.CTkLabel(
+    evidence_frame,
+    text="Select Incident"
+).pack(
+    anchor="w",
+    padx=50
+)
+
+evidence_var = ctk.StringVar(
+    value=""
+)
+
+evidence_menu = ctk.CTkOptionMenu(
+    evidence_frame,
+    values=["No incidents found"],
+    variable=evidence_var
+)
+
+evidence_menu.pack(
+    pady=5,
+    padx=50,
+    anchor="w"
+)
+
+ctk.CTkButton(
+    evidence_frame,
+    text="Browse File",
+    command=browse_file,
+    width=250
+).pack(
+    pady=(15,5)
+)
+
+file_label = ctk.CTkLabel(
+    evidence_frame,
+    text="No file selected"
+)
+
+file_label.pack(
+    pady=5
+)
+
+ctk.CTkLabel(
+    evidence_frame,
+    text="Notes"
+).pack(
+    anchor="w",
+    padx=50,
+    pady=(15,0)
+)
+
+evidence_notes_entry = ctk.CTkTextbox(
+    evidence_frame,
+    width=250,
+    height=80,
+    wrap="word"
+)
+
+evidence_notes_entry.pack(
+    pady=5
+)
+
+ctk.CTkButton(
+    evidence_frame,
+    text="Submit Evidence",
+    command=submit_evidence,
+    width=250
+).pack(
+    pady=15
+)
+
+ctk.CTkButton(
+    evidence_frame,
+    text="Back",
+    command=lambda: (
+        window.geometry("500x650"),
+        evidence_frame.pack_forget(),
+        dashboard_frame.pack(pady=60)
+    ),
+    width=250
+).pack(
+    pady=10
+)
+
+# ============================================================
+# VIEW MY EVIDENCE PAGE
+
+my_evidence_frame = ctk.CTkFrame(
+    window,
+    width=350,
+    height=550
+)
+
+my_evidence_frame.pack_propagate(False)
+
+ctk.CTkLabel(
+    my_evidence_frame,
+    text="My Evidence",
+    font=TITLE_FONT
+).pack(
+    pady=20
+)
+
+my_evidence_list_area = ctk.CTkScrollableFrame(
+    my_evidence_frame,
+    width=310,
+    height=380
+)
+
+my_evidence_list_area.pack(
+    fill="both",
+    expand=True,
+    padx=10,
+    pady=10
+)
+
+ctk.CTkButton(
+    my_evidence_frame,
+    text="Back",
+    command=lambda: (
+        window.geometry("500x650"),
+        my_evidence_frame.pack_forget(),
+        dashboard_frame.pack(pady=60)
+    ),
+    width=250
+).pack(
+    pady=10
+)
+
+# ============================================================
 # KANBAN BOARD
 
 kanban_frame = ctk.CTkFrame(
@@ -1434,7 +2008,14 @@ report_button = ctk.CTkButton(
 
 evidence_button = ctk.CTkButton(
     dashboard_frame,
-    text="Upload Evidence"
+    text="Upload Evidence",
+    command=open_evidence_screen
+)
+
+my_evidence_button = ctk.CTkButton(
+    dashboard_frame,
+    text="My Evidence",
+    command=open_my_evidence_screen
 )
 
 ctk.CTkButton(
