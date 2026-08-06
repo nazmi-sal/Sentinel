@@ -664,6 +664,16 @@ def open_incident_detail(incident_id):
         padx=5
     )
 
+    ctk.CTkButton(
+        button_row,
+        text="Evidence",
+        width=100,
+        command=lambda: open_incident_evidence(incident_id, title)
+    ).pack(
+        side="left",
+        padx=5
+    )
+
     scroll_area = ctk.CTkScrollableFrame(
         detail_window,
         width=310,

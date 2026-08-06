@@ -1,10 +1,15 @@
 # links the database
 import sqlite3
-
+import hashlib
 
 # connects to Sentinel database
 def get_connection():
     return sqlite3.connect("sentinel.db")
+
+# hashes the password using SHA-256
+def hash_password(password):
+
+    return hashlib.sha256(password.encode()).hexdigest()
 
 # creates users
 def create_user(user_name, email, role, password_hash):
@@ -35,6 +40,8 @@ def create_user(user_name, email, role, password_hash):
     if len(password_hash) < 8:
         connection.close()
         return "Password must be at least 8 characters."
+
+    password_hash = hash_password(password_hash)
 
     # adds user to database
     try:
@@ -70,6 +77,8 @@ def login_user(email, password):
     connection = get_connection()
     cursor = connection.cursor()
 
+    hashed_input = hash_password(password)
+
     cursor.execute("""
     SELECT user_id, user_name, role
     FROM User
@@ -77,7 +86,7 @@ def login_user(email, password):
     """,
     (
         email,
-        password
+        hashed_input
     ))
 
     user = cursor.fetchone()
