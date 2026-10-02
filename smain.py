@@ -4,7 +4,7 @@ from PIL import Image
 
 import reports
 from userfunctions import login_user, create_user, get_investigators, get_user_name
-from incidents import create_incident, get_all_incidents, get_incidents_by_reporter
+from incidents import create_incident, get_all_incidents, get_incidents_by_reporter, search_incidents
 from statuschanges import get_status_history, change_status, undo_last_status_change
 from reports import create_report, get_reports
 from evidence import add_evidence, get_evidence_by_uploader
@@ -29,8 +29,7 @@ ACCENT = "#38bdf8"
 TEXT = "#f8fafc"
 
 # verification code for investigators
-INVESTIGATOR_CODE = "ENVaSES.2026!" 
-
+INVESTIGATOR_CODE = "EnvasesWork{78}" 
 
 # ============================================================
 # LOGO:
@@ -324,10 +323,12 @@ last_moved_incident = {"id": None}
 
 def open_kanban_board():
 
-    window.geometry("950x600")
+    window.geometry("950x650")
 
     dashboard_frame.pack_forget()
     incident_frame.pack_forget()
+
+    clear_filters(rebuild=False)
 
     build_kanban_board()
 
@@ -337,6 +338,56 @@ def open_kanban_board():
 
     window.lift()
     window.focus_force()
+
+# ------------------------
+# Search / Filter
+
+def get_filtered_incidents():
+
+    status = filter_status_var.get()
+    category = filter_category_var.get()
+    severity = filter_severity_var.get()
+    date_from = filter_date_from_entry.get().strip()
+    date_to = filter_date_to_entry.get().strip()
+
+    status = None if status == "All Statuses" else status
+    category = None if category == "All Categories" else category
+    severity = None if severity == "All Severities" else severity
+    date_from = date_from if date_from else None
+    date_to = date_to if date_to else None
+
+    if date_from:
+        date_from = date_from + " 00:00:00"
+
+    if date_to:
+        date_to = date_to + " 23:59:59"
+
+    if not any([status, category, severity, date_from, date_to]):
+
+        return get_all_incidents()
+
+    return search_incidents(
+        status=status,
+        category=category,
+        severity=severity,
+        date_from=date_from,
+        date_to=date_to
+    )
+
+def apply_filters():
+
+    build_kanban_board()
+
+def clear_filters(rebuild=True):
+
+    filter_status_var.set("All Statuses")
+    filter_category_var.set("All Categories")
+    filter_severity_var.set("All Severities")
+    filter_date_from_entry.delete(0, "end")
+    filter_date_to_entry.delete(0, "end")
+
+    if rebuild:
+        build_kanban_board()
 
 # ------------------------
 # allowing drag and drop of cards between columns
@@ -459,7 +510,7 @@ def build_kanban_board():
 
             widget.destroy()
 
-    incidents = get_all_incidents()
+    incidents = get_filtered_incidents()
 
     for incident in incidents:
 
@@ -606,6 +657,91 @@ def open_incident_evidence(incident_id, incident_title):
             padx=5
         )
 
+def open_reassign_popup(incident_id, current_investigator_id):
+
+    reassign_window = ctk.CTkToplevel(window)
+    reassign_window.title("Reassign Investigator")
+    reassign_window.geometry("300x220")
+    reassign_window.transient(window)
+    reassign_window.attributes("-topmost", True)
+    reassign_window.lift()
+    reassign_window.focus_force()
+
+    ctk.CTkLabel(
+        reassign_window,
+        text="Reassign Investigator",
+        font=HEADING_FONT
+    ).pack(
+        pady=15
+    )
+
+    investigators = get_investigators()
+
+    reassign_lookup = {}
+    names = []
+
+    for investigator_id, investigator_name in investigators:
+
+        reassign_lookup[investigator_name] = investigator_id
+        names.append(investigator_name)
+
+    if not names:
+
+        names = ["No investigators available"]
+
+    reassign_var = ctk.StringVar(value=names[0])
+
+    ctk.CTkOptionMenu(
+        reassign_window,
+        values=names,
+        variable=reassign_var
+    ).pack(
+        pady=10
+    )
+
+    def confirm_reassign():
+
+        selected_name = reassign_var.get()
+        new_investigator_id = reassign_lookup.get(selected_name)
+
+        if new_investigator_id is None:
+
+            messagebox.showerror(
+                "Error",
+                "Please select a valid investigator."
+            )
+
+            return
+
+        from userfunctions import reassign_investigator
+
+        result = reassign_investigator(incident_id, new_investigator_id)
+
+        if result:
+
+            messagebox.showinfo(
+                "Success",
+                "Investigator reassigned successfully!"
+            )
+
+            reassign_window.destroy()
+            build_kanban_board()
+
+        else:
+
+            messagebox.showerror(
+                "Error",
+                "Could not reassign investigator."
+            )
+
+    ctk.CTkButton(
+        reassign_window,
+        text="Confirm",
+        command=confirm_reassign
+    ).pack(
+        pady=15
+    )
+
 def open_incident_detail(incident_id):
 
     from incidents import get_incident
@@ -673,6 +809,18 @@ def open_incident_detail(incident_id):
         side="left",
         padx=5
     )
+
+    if current_user["role"] == "investigator":
+
+        ctk.CTkButton(
+            button_row,
+            text="Reassign",
+            width=100,
+            command=lambda: open_reassign_popup(incident_id, investigator_id)
+        ).pack(
+            side="left",
+            padx=5
+        )
 
     scroll_area = ctk.CTkScrollableFrame(
         detail_window,
@@ -1897,7 +2045,7 @@ ctk.CTkButton(
 kanban_frame = ctk.CTkFrame(
     window,
     width=900,
-    height=550
+    height=620
 )
 
 kanban_frame.pack_propagate(False)
@@ -1934,6 +2082,97 @@ ctk.CTkButton(
 ).pack(
     side="left",
     padx=5
+)
+
+# ------------------------
+# Filter row
+
+kanban_filter_row = ctk.CTkFrame(
+    kanban_frame,
+    fg_color="transparent"
+)
+
+kanban_filter_row.pack(
+    pady=(0,5)
+)
+
+filter_status_var = ctk.StringVar(value="All Statuses")
+
+ctk.CTkOptionMenu(
+    kanban_filter_row,
+    values=["All Statuses"] + KANBAN_STATUSES,
+    variable=filter_status_var,
+    width=130
+).pack(
+    side="left",
+    padx=3
+)
+
+filter_category_var = ctk.StringVar(value="All Categories")
+
+ctk.CTkOptionMenu(
+    kanban_filter_row,
+    values=["All Categories", "Cyber", "Security", "Theft", "Damage", "Other"],
+    variable=filter_category_var,
+    width=130
+).pack(
+    side="left",
+    padx=3
+)
+
+filter_severity_var = ctk.StringVar(value="All Severities")
+
+ctk.CTkOptionMenu(
+    kanban_filter_row,
+    values=["All Severities", "Low", "Medium", "High", "Critical"],
+    variable=filter_severity_var,
+    width=130
+).pack(
+    side="left",
+    padx=3
+)
+
+filter_date_from_entry = ctk.CTkEntry(
+    kanban_filter_row,
+    placeholder_text="From (YYYY-MM-DD)",
+    width=130
+)
+
+filter_date_from_entry.pack(
+    side="left",
+    padx=3
+)
+
+filter_date_to_entry = ctk.CTkEntry(
+    kanban_filter_row,
+    placeholder_text="To (YYYY-MM-DD)",
+    width=130
+)
+
+filter_date_to_entry.pack(
+    side="left",
+    padx=3
+)
+
+ctk.CTkButton(
+    kanban_filter_row,
+    text="Apply",
+    command=apply_filters,
+    width=70
+).pack(
+    side="left",
+    padx=3
+)
+
+ctk.CTkButton(
+    kanban_filter_row,
+    text="Clear",
+    command=clear_filters,
+    width=70,
+    fg_color="gray30"
+).pack(
+    side="left",
+    padx=3
 )
 
 for status in KANBAN_STATUSES:

@@ -1,7 +1,6 @@
 #creates a database
 import sqlite3
 
-
 def create_tables():
 
     connection = sqlite3.connect("sentinel.db")
@@ -114,7 +113,6 @@ def create_tables():
     connection.close()
 
     print("Database tables ready.")
-
 
 if __name__ == "__main__":
     create_tables()
