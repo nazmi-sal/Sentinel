@@ -34,7 +34,7 @@ INVESTIGATOR_CODE = "EnvasesWork{78}"
 # ============================================================
 # LOGO:
 
-LOGO_PATH = r"C:\Users\administrator\Downloads\vw5h7j3y.png"
+LOGO_PATH = r"C:\Users\nzsal\Downloads\envases.png"
 
 try:
 
@@ -43,7 +43,7 @@ try:
     logo_image = ctk.CTkImage(
         light_image=original_logo,
         dark_image=original_logo,
-        size=(220,50)
+        size=(190,120)
     )
 
 except:
